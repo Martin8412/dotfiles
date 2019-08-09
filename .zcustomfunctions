@@ -1,0 +1,75 @@
+function extract_node_logs() {
+  if (( $# < 1))
+  then
+    echo "Usage extract_node_logs id [id2] ..."
+    return 1
+  fi
+
+  echo "Extracting logs.."
+
+  (
+    mkdir -p $HOME/logs
+    cd $HOME/logs
+    for i in "$@"
+    do
+      (kubectl logs node-$i node --timestamps > node-$i)
+    done
+  )
+}
+
+function extract_node_profiling() {
+  if (( $# < 1))
+  then 
+    echo "Usage: extract_node_profiling id [id2] ..."
+    return 1
+  fi
+
+  echo "Extracting profiling data.."
+
+  (
+    mkdir -p $HOME/profiling
+    cd $HOME/profiling
+    for i in "$@"
+    do
+      (kubectl cp node-$i:/var/lib/concordium/data/gc.log gc-$i.log)
+      (kubectl cp node-$i:/var/lib/concordium/data/p2p_client-cli.hp p2p_client-cli-$i.hp)
+    done
+  )
+}
+
+function package_and_ship_logs_and_profiling() {
+  if [ ! -d "$HOME/logs" ]; then
+    echo "$HOME/logs doesn't exist. Run extract_node_logs first!"
+  fi
+
+  if [ ! -d "$HOME/profiling" ]; then
+    echo "$HOME/profiling doesn't exist. Run extract_node_profiling first!"
+  fi
+
+  rm -f logs.tar.gz
+  rm -f profiling.tar.gz
+
+  cd $HOME
+  tar -czf /tmp/logs.tar.gz logs
+  tar -czf /tmp/profiling.tar.gz profiling
+
+  aws s3 cp /tmp/logs.tar.gz s3://file-sharing.concordium.com/ --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
+  aws s3 cp /tmp/profiling.tar.gz s3://file-sharing.concordium.com/ --grants read=uri=http://acs.amazonaws.com/groups/global/AllUsers
+
+  rm -f /tmp/logs.tar.gz
+  rm -f /tmp/profiling.tar.gz
+  rm -rf $HOME/logs
+  rm -rf $HOME/profiling
+}
+
+function do_testnet_rollout() {
+  (cd $HOME/repos/devops/deployments && \
+  kubectl delete -f basic-deploy.yaml && kubectl delete pod --force --grace-period 0 --selector app=node && kubectl apply -f bootstrapper-deploy.yaml && kubectl delete pod --force --grace-period 0 --selector app=bootstrapper && sleep 10s && kubectl apply -f basic-deploy.yaml
+  )
+}
+
+function do_testnet_restart() {
+  kubectl delete pod --force --grace-period 0 --selector app=bootstrapper
+  sleep 5s
+  kubectl delete pod --force --grace-period 0 --selector app=node
+}

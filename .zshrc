@@ -12,3 +12,9 @@ fi
 
 # Customize to your needs...
 source <(kubectl completion zsh)
+
+source $HOME/.zcustomfunctions
+
+bindkey "^A" vi-beginning-of-line
+bindkey "^E" vi-end-of-line
+
